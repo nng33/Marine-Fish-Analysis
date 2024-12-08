@@ -1,0 +1,177 @@
+---
+title: "fish"
+author: "Nathan"
+date: "2024-12-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(MASS)
+library(tidyverse)
+library(ggplot2)
+library(hrbrthemes)
+library(glmnet)
+```
+
+# Marine Fish Analysis
+
+```{r}
+fish <- read.csv("Data/Marine_Fish_Data.csv")
+summary(fish)
+```
+
+```{r}
+# Renaming for convenience 
+names(fish) <- c("species", "region", "breeding_season", "fishing_method", "pop", "size", "risk", "temp", "pollution_lvl")
+```
+
+# Some Exploratory Data Analysis
+
+## Boxplots by species
+
+```{r}
+ggplot(fish, aes(x=species, y=size)) + 
+    geom_boxplot() +
+    theme_minimal() +
+    labs(x="Species", y="Average Size (cm)", title="Average sizes of different species of fish")
+```
+
+```{r}
+ggplot(fish, aes(x=species, y=pop)) + 
+    geom_boxplot() +
+    theme_minimal() +
+    labs(x="Species", y="Total Population", title="Population of different species of fish")
+```
+
+```{r}
+fish$pollution_lvl <- factor(fish$pollution_lvl, levels = c("Low", "Medium", "High"))
+
+ggplot(fish, aes(x=species, y=size, fill=pollution_lvl)) + 
+    geom_boxplot() +
+    theme_minimal() + 
+    labs(x = "Species", y = "Average Size (cm)", fill = "Pollution Level")
+```
+
+```{r}
+ggplot(fish, aes(x=species, y=pop, fill=pollution_lvl)) + 
+    geom_boxplot() +
+    theme_minimal() + 
+    labs(x = "Species", y = "Total Population", fill = "Pollution Level")
+```
+
+## Distribution of fish size
+
+```{r}
+ggplot(data=fish, aes(x=size, group=species, fill=species)) +
+    geom_histogram(alpha=0.6, binwidth = 10) +
+    theme_ipsum() +
+    facet_wrap(~species) +
+    theme(
+      legend.position="none",
+      panel.spacing = unit(0.1, "lines"),
+      axis.ticks.x=element_blank()
+    )
+```
+
+## Scatterplots
+
+```{r}
+ggplot(data=fish, aes(x=size, y=temp, group=region, color=risk)) +
+    geom_point(size=1) +
+    facet_wrap(~region)
+```
+
+```{r}
+ggplot(data=fish, aes(x=pop, y=temp, group=fishing_method, color=risk)) +
+    geom_point(size=1) +
+    facet_wrap(~fishing_method)
+```
+
+## Barplots
+
+```{r}
+ggplot(data = fish, aes(x = risk, fill = fishing_method)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Risk Grouped by Fishing Method", x = "Risk", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data = fish, aes(x = risk, fill = region)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Risk Grouped by Region", x = "Risk", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(fish, aes(x=region, y=temp, fill=risk)) + 
+    geom_boxplot() +
+    facet_wrap(~region, scale="free")
+```
+
+# Model Fitting
+
+## Fitting a GLM
+
+```{r}
+fish$risk <- as.factor(fish$risk)
+
+mod1 <- glm(risk ~ size + breeding_season + temp, family =binomial(link=logit), data=fish)
+
+plot(mod1)
+summary(mod1)
+```
+
+```{r}
+ggplot(data.frame(lp = mod1$linear.predictors, residuals = residuals(mod1, type = "deviance")),
+       aes(x = lp, y = residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "Linear Predictor", y = "Deviance Residuals", title = "Residual Plot") +
+  theme_minimal()
+```
+
+```{r}
+full_mod <- glm(risk ~ ., family=binomial(), data=fish)
+
+null_mod <- glm(risk ~ 1, family=binomial(), data=fish)
+
+stepwise_model <- stepAIC(full_mod,scope = list(lower = null_mod, upper = full_mod), direction = "both")
+```
+
+```{r}
+mod2 <- glm(risk ~ breeding_season + pop, family =quasibinomial, data=fish)
+
+plot(mod2)
+summary(mod2)
+```
+
+## Regularization Techniques Lasso
+
+```{r}
+y <- fish$risk
+x <- data.matrix(fish[,c("species", "region", "breeding_season", "fishing_method", "pop", "size", "temp", "pollution_lvl")])
+
+cv_model <- cv.glmnet(x, y, alpha = 1, family="binomial")
+
+best_lambda <- cv_model$lambda.min
+best_lambda
+plot(cv_model) 
+```
+
+```{r}
+best_model <- glmnet(x, y, alpha = 1, lambda = best_lambda, family="binomial")
+coef(best_model)
+```
+
+```{r}
+# Fitting the glm with features collected from lasso
+mod3 <- glm(risk ~ pop + size + breeding_season + temp + region, family =binomial(link=logit), data=fish)
+
+summary(mod3)
+plot(mod3)
+```
+
+```{r}
+
+```
